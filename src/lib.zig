@@ -4,8 +4,9 @@ pub const ReadError = std.io.FixedBufferStream([]const u8).Reader.Error;
 pub const WriteError = std.io.FixedBufferStream([]const u8).Writer.Error;
 pub const Error = ReadError || WriteError || error{ EndOfStream, OutOfMemory };
 
-/// the ordering of this enum is important because of() relies on 'capital'
-/// being last.  this is because 'capital' is less restrictive.
+/// the ordering of this enum is important because of() relies on more
+/// restrictive cases coming before less restrictive ones. i've noticed that
+/// 'capital' must be last or tests fail.
 pub const Case = enum(u8) {
     camel,
     pascal,
@@ -18,7 +19,7 @@ pub const Case = enum(u8) {
     capital,
     unknown,
 
-    // ensure all values correspond to the enum defined in src/case.h:Case
+    // ensure all values correspond to the Case enum defined in src/case.h
     comptime {
         @setEvalBranchQuota(8000);
         const c = @cImport({
@@ -126,8 +127,6 @@ fn upperLowerImpl(
             // don't write a final trailing whitespace
             else => if (state == .whitespace and ring_buffer.count == 0) {
                 // skip
-            } else if (false) {
-                //
             } else try opts.writeByte(cc, writer, toCaseFn),
         }
         prevstate = state;
@@ -230,7 +229,12 @@ pub fn header(reader: anytype, writer: anytype) Error!void {
     return capitalImpl(reader, writer, .{ .fill = "-" }, .header);
 }
 
-fn constantImpl(reader: anytype, writer: anytype, opts: Options, comptime f: fn (u8) u8) Error!void {
+fn constantImpl(
+    reader: anytype,
+    writer: anytype,
+    opts: Options,
+    comptime f: fn (u8) u8,
+) Error!void {
     var ring_buffer = std.fifo.LinearFifo(u8, .{ .Static = 2 }).init();
     const rbw = ring_buffer.writer();
     const rbr = ring_buffer.reader();
@@ -438,6 +442,7 @@ pub fn pascal(reader: anytype, writer: anytype) Error!void {
 //     }
 // }
 
+/// converts to case from reader into writer
 pub fn to(
     comptime case: Case,
     reader: anytype,
@@ -451,6 +456,7 @@ pub fn to(
         try caseFn(reader, writer);
 }
 
+/// writes converted text to buf in specified case
 pub fn bufTo(
     buf: []u8,
     comptime case: Case,
@@ -463,6 +469,7 @@ pub fn bufTo(
     return wfbs.getWritten();
 }
 
+/// returns length needed to convert text to case
 pub fn length(
     comptime case: Case,
     text: []const u8,
@@ -474,6 +481,7 @@ pub fn length(
     return cw.bytes_written;
 }
 
+/// allocates a buffer and writes converted text to buffer in specified case
 pub fn allocTo(
     allocator: std.mem.Allocator,
     comptime case: Case,
@@ -484,6 +492,7 @@ pub fn allocTo(
     return bufTo(buf, case, text, opts);
 }
 
+/// same as allocTo() but null terminated
 pub fn allocZTo(
     allocator: std.mem.Allocator,
     comptime case: Case,
@@ -497,6 +506,8 @@ pub fn allocZTo(
     return buf;
 }
 
+/// uses a comptime allocated buffer 20% bigger than text.len which should almost
+/// always be large enough. incase its not big enought, use comptimeToLen().
 pub fn comptimeTo(
     comptime case: Case,
     comptime text: []const u8,
@@ -513,9 +524,8 @@ pub fn comptimeTo(
     }
 }
 
-/// same as comptimeTo() with additional 'len' param allowing the user
-/// to specify the buffer length incase comptimeTo()'s buffer estimate is too
-/// small.
+/// same as comptimeTo() but allows user to specify buffer len incase
+/// comptimeTo()'s buffer estimate is too small
 pub fn comptimeToLen(
     comptime case: Case,
     comptime text: []const u8,
@@ -600,6 +610,7 @@ pub fn isConstant(text: []const u8) bool {
     } else true;
 }
 
+/// return `Case` of text. may be 'unknown'.
 pub fn of(text: []const u8) Case {
     @setEvalBranchQuota(2000);
     inline for (comptime std.meta.tags(Case)) |tag| {
