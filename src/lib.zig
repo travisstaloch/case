@@ -503,8 +503,27 @@ pub fn comptimeTo(
     comptime opts: Options,
 ) ![]const u8 {
     comptime {
-        // TODO better buffer length estimate
-        var buf: [text.len * 3 / 2]u8 = undefined;
+        return comptimeToLen(case, text, opts,
+        // http://www.macfreek.nl/memory/Letter_Distribution says that
+        // the letter frequency of spaces is aound 18%
+        //
+        // TODO better buffer length estimate w/out using too much comptime
+        // quota. calling length() here uses quite a bit.
+        text.len * 5 / 4);
+    }
+}
+
+/// same as comptimeTo() with additional 'len' param allowing the user
+/// to specify the buffer length incase comptimeTo()'s buffer estimate is too
+/// small.
+pub fn comptimeToLen(
+    comptime case: Case,
+    comptime text: []const u8,
+    comptime opts: Options,
+    comptime len: usize,
+) ![]const u8 {
+    comptime {
+        var buf: [len]u8 = undefined;
         return bufTo(&buf, case, text, opts);
     }
 }
