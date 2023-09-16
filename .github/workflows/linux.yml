@@ -1,0 +1,23 @@
+name: Linux
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: "0 * * * 1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v2.1.1
+      with:
+        version: master
+
+    - run: zig build test
