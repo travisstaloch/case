@@ -14,7 +14,7 @@ typedef enum {
 } Case;
 
 char* case_upper(
-  char* text, 
+  const char* text, 
   unsigned long text_len, 
   char* fill_text, 
   unsigned long fill_len, 
@@ -22,7 +22,7 @@ char* case_upper(
 );
 
 char* case_lower(
-  char* text, 
+  const char* text, 
   unsigned long text_len, 
   char* fill_text, 
   unsigned long fill_len, 
@@ -30,23 +30,23 @@ char* case_lower(
 );
 
 char* case_capital(
-  char* text, 
+  const char* text, 
   unsigned long text_len, 
   char* fill_text, 
   unsigned long fill_len, 
   char keep_apostrophes
 );
 
-char* case_header(char* text, unsigned long text_len);
-char* case_constant(char* text, unsigned long text_len);
-char* case_snake(char* text, unsigned long text_len);
-char* case_kebab(char* text, unsigned long text_len);
-char* case_camel(char* text, unsigned long text_len);
-char* case_pascal(char* text, unsigned long text_len);
+char* case_header(const char* text, unsigned long text_len);
+char* case_constant(const char* text, unsigned long text_len);
+char* case_snake(const char* text, unsigned long text_len);
+char* case_kebab(const char* text, unsigned long text_len);
+char* case_camel(const char* text, unsigned long text_len);
+char* case_pascal(const char* text, unsigned long text_len);
 
 char* case_to_ext(
   Case case_id, 
-  char* text, 
+  const char* text, 
   unsigned long text_len,
   char* fill_text, 
   unsigned long fill_len, 
@@ -54,16 +54,23 @@ char* case_to_ext(
 );
 
 
-bool case_is_lower(char* text, unsigned long text_len);
-bool case_is_upper(char* text, unsigned long text_len);
-bool case_is_capital(char* text, unsigned long text_len);
-bool case_is_camel(char* text, unsigned long text_len);
-bool case_is_pascal(char* text, unsigned long text_len);
-bool case_is_snake(char* text, unsigned long text_len);
-bool case_is_kebab(char* text, unsigned long text_len);
-bool case_is_header(char* text, unsigned long text_len);
-bool case_is_constant(char* text, unsigned long text_len);
+bool case_is_lower(const char* text, unsigned long text_len);
+bool case_is_upper(const char* text, unsigned long text_len);
+bool case_is_capital(const char* text, unsigned long text_len);
+bool case_is_camel(const char* text, unsigned long text_len);
+bool case_is_pascal(const char* text, unsigned long text_len);
+bool case_is_snake(const char* text, unsigned long text_len);
+bool case_is_kebab(const char* text, unsigned long text_len);
+bool case_is_header(const char* text, unsigned long text_len);
+bool case_is_constant(const char* text, unsigned long text_len);
 
-char* case_to(Case case_id, char* text, unsigned long text_len);
-char  case_of(char* text, unsigned long text_len);
+char* case_to(Case case_id, const char* text, unsigned long text_len);
+char* case_to_buf(
+  Case case_id,
+  const char* text,
+  unsigned long text_len,
+  char* buf,
+  unsigned long buf_len
+);
+char  case_of(const char* text, unsigned long text_len);
 char* case_id_to_string(Case case_id);

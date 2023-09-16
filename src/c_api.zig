@@ -118,6 +118,29 @@ pub export fn case_to(
     unreachable;
 }
 
+pub export fn case_to_buf(
+    case_id: u8,
+    text: [*]const u8,
+    text_len: usize,
+    buf: [*]u8,
+    buf_len: usize,
+) [*c]const u8 {
+    switch (std.meta.intToEnum(Case, case_id) catch return null) {
+        .unknown => return null,
+        inline else => |tag| {
+            const result = case.bufTo(
+                buf[0..buf_len],
+                tag,
+                text[0..text_len],
+                .{},
+            ) catch return null;
+            buf[result.len] = 0;
+            return result.ptr;
+        },
+    }
+    unreachable;
+}
+
 pub export fn case_is_lower(text: [*]const u8, text_len: usize) bool {
     return case.isLower(text[0..text_len]);
 }
