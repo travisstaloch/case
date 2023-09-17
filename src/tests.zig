@@ -7,7 +7,7 @@ const case = @import("case");
 const c = @import("c_api.zig");
 
 fn getExpected(_expected: []const u8, fromcase: case.Case, tocase: case.Case) []const u8 {
-    return if (!fromcase.isPrincipal() and tocase == .capital)
+    return if (!fromcase.hasOptions() and tocase == .capital)
         expected_texts.capital_no_punct
     else
         _expected;
@@ -16,14 +16,17 @@ fn getExpected(_expected: []const u8, fromcase: case.Case, tocase: case.Case) []
 fn expectCase(
     comptime initial: []const u8,
     comptime _expected: []const u8,
-    comptime mfromcase: ?case.Case,
+    comptime fromcase: case.Case,
     comptime tocase: case.Case,
     opts: case.Options,
 ) !void {
     @setEvalBranchQuota(128_000);
     var buf: [initial.len + 10]u8 = undefined;
-    const actual = try case.bufTo(&buf, tocase, initial, opts);
-    const expected = if (mfromcase) |fromcase|
+    const actual = if (comptime tocase.hasOptions())
+        try case.bufToExt(&buf, tocase, initial, opts)
+    else
+        try case.bufTo(&buf, tocase, initial);
+    const expected = if (fromcase != .unknown)
         getExpected(_expected, fromcase, tocase)
     else
         _expected;
@@ -34,7 +37,7 @@ fn expectCase(
         @compileError(std.fmt.comptimePrint(
             "unexpected result. from {s} to {s} '{s}'. expected '{s}' got '{s}'",
             .{
-                if (mfromcase) |fromcase| @tagName(fromcase) else "null",
+                @tagName(fromcase),
                 @tagName(tocase),
                 initial,
                 expected,
@@ -45,29 +48,29 @@ fn expectCase(
 }
 
 test "basic cases" {
-    try expectCase("foo_bar", "FOO BAR", null, .upper, .{});
-    try expectCase("fooBar", "foo bar", null, .lower, .{});
-    try expectCase("foo_v_bar", "Foo V Bar", null, .capital, .{});
+    try expectCase("foo_bar", "FOO BAR", .unknown, .upper, .{});
+    try expectCase("fooBar", "foo bar", .unknown, .lower, .{});
+    try expectCase("foo_v_bar", "Foo V Bar", .unknown, .capital, .{});
 
-    try expectCaseCApi("foo_bar", "FOO BAR", null, .upper, .{});
-    try expectCaseCApi("fooBar", "foo bar", null, .lower, .{});
-    try expectCaseCApi("foo_v_bar", "Foo V Bar", null, .capital, .{});
+    try expectCaseCApi("foo_bar", "FOO BAR", .unknown, .upper, .{});
+    try expectCaseCApi("fooBar", "foo bar", .unknown, .lower, .{});
+    try expectCaseCApi("foo_v_bar", "Foo V Bar", .unknown, .capital, .{});
 }
 
 test "code cases" {
-    try expectCase("Foo bar!", "foo_bar", null, .snake, .{});
-    try expectCase("foo.bar", "FooBar", null, .pascal, .{});
-    try expectCase("foo, bar", "fooBar", null, .camel, .{});
-    try expectCase("Foo? Bar.", "foo-bar", null, .kebab, .{});
-    try expectCase("fooBar=", "Foo-Bar", null, .header, .{});
-    try expectCase("Foo-Bar", "FOO_BAR", null, .constant, .{});
+    try expectCase("Foo bar!", "foo_bar", .unknown, .snake, .{});
+    try expectCase("foo.bar", "FooBar", .unknown, .pascal, .{});
+    try expectCase("foo, bar", "fooBar", .unknown, .camel, .{});
+    try expectCase("Foo? Bar.", "foo-bar", .unknown, .kebab, .{});
+    try expectCase("fooBar=", "Foo-Bar", .unknown, .header, .{});
+    try expectCase("Foo-Bar", "FOO_BAR", .unknown, .constant, .{});
 
-    try expectCaseCApi("Foo bar!", "foo_bar", null, .snake, .{});
-    try expectCaseCApi("foo.bar", "FooBar", null, .pascal, .{});
-    try expectCaseCApi("foo, bar", "fooBar", null, .camel, .{});
-    try expectCaseCApi("Foo? Bar.", "foo-bar", null, .kebab, .{});
-    try expectCaseCApi("fooBar=", "Foo-Bar", null, .header, .{});
-    try expectCaseCApi("Foo-Bar", "FOO_BAR", null, .constant, .{});
+    try expectCaseCApi("Foo bar!", "foo_bar", .unknown, .snake, .{});
+    try expectCaseCApi("foo.bar", "FooBar", .unknown, .pascal, .{});
+    try expectCaseCApi("foo, bar", "fooBar", .unknown, .camel, .{});
+    try expectCaseCApi("Foo? Bar.", "foo-bar", .unknown, .kebab, .{});
+    try expectCaseCApi("fooBar=", "Foo-Bar", .unknown, .header, .{});
+    try expectCaseCApi("Foo-Bar", "FOO_BAR", .unknown, .constant, .{});
 }
 
 // test "title cases" {
@@ -76,25 +79,25 @@ test "code cases" {
 // }
 
 test "custom options" {
-    try expectCase("FOO-BAR", "foo.bar", null, .lower, .{ .fill = "." });
-    try expectCase("Foo? Bar.", "FOO__BAR", null, .upper, .{ .fill = "__" });
-    try expectCase("fooBar", "Foo + Bar", null, .capital, .{ .fill = " + " });
-    try expectCase("Don't keep 'em!", "dont/keep/em", null, .lower, .{
+    try expectCase("FOO-BAR", "foo.bar", .unknown, .lower, .{ .fill = "." });
+    try expectCase("Foo? Bar.", "FOO__BAR", .unknown, .upper, .{ .fill = "__" });
+    try expectCase("fooBar", "Foo + Bar", .unknown, .capital, .{ .fill = " + " });
+    try expectCase("Don't keep 'em!", "dont/keep/em", .unknown, .lower, .{
         .fill = "/",
         .apostrophes = .remove,
     });
-    try expectCase("'ello, world.", "Ello, World.", null, .capital, .{
+    try expectCase("'ello, world.", "Ello, World.", .unknown, .capital, .{
         .apostrophes = .remove,
     });
 
-    try expectCaseCApi("FOO-BAR", "foo.bar", null, .lower, .{ .fill = "." });
-    try expectCaseCApi("Foo? Bar.", "FOO__BAR", null, .upper, .{ .fill = "__" });
-    try expectCaseCApi("fooBar", "Foo + Bar", null, .capital, .{ .fill = " + " });
-    try expectCaseCApi("Don't keep 'em!", "dont/keep/em", null, .lower, .{
+    try expectCaseCApi("FOO-BAR", "foo.bar", .unknown, .lower, .{ .fill = "." });
+    try expectCaseCApi("Foo? Bar.", "FOO__BAR", .unknown, .upper, .{ .fill = "__" });
+    try expectCaseCApi("fooBar", "Foo + Bar", .unknown, .capital, .{ .fill = " + " });
+    try expectCaseCApi("Don't keep 'em!", "dont/keep/em", .unknown, .lower, .{
         .fill = "/",
         .apostrophes = .remove,
     });
-    try expectCaseCApi("'ello, world.", "Ello, World.", null, .capital, .{
+    try expectCaseCApi("'ello, world.", "Ello, World.", .unknown, .capital, .{
         .apostrophes = .remove,
     });
 }
@@ -147,9 +150,9 @@ test "conversions" {
 
 test "edge cases" {
     // digits
-    try expectCase("one 2 three", "one_2_three", null, .snake, .{});
-    try expectCase("one2Three", "one2_three", null, .snake, .{});
-    try expectCase("one2Three4", "one2_three4", null, .snake, .{});
+    try expectCase("one 2 three", "one_2_three", .unknown, .snake, .{});
+    try expectCase("one2Three", "one2_three", .unknown, .snake, .{});
+    try expectCase("one2Three4", "one2_three4", .unknown, .snake, .{});
 }
 
 test "fuzz" {
@@ -171,7 +174,7 @@ test "fuzz" {
             var rfbs = std.io.fixedBufferStream(buf);
             var wfbs = std.io.fixedBufferStream(buf2);
             const caseFn = @field(case, @tagName(tocase));
-            if (comptime tocase.isPrincipal())
+            if (comptime tocase.hasOptions())
                 try caseFn(rfbs.reader(), wfbs.writer(), .{})
             else
                 try caseFn(rfbs.reader(), wfbs.writer());
@@ -183,7 +186,7 @@ test "fuzz" {
 fn expectCaseId(comptime text: []const u8, comptime case_tag: case.Case) !void {
     const tag_name = @tagName(case_tag);
     const case_fn_name = "is" ++
-        comptime try case.comptimeTo(.pascal, tag_name, .{});
+        comptime try case.comptimeTo(.pascal, tag_name);
     const isCaseFn = &@field(case, case_fn_name);
 
     testing.expect(isCaseFn(text)) catch |e| {
@@ -235,7 +238,10 @@ fn expectToCaseAlloc(
     comptime tocase: case.Case,
     opts: case.Options,
 ) !void {
-    const actual = try case.allocTo(allocator, tocase, initial, opts);
+    const actual = if (comptime tocase.hasOptions())
+        try case.allocToExt(allocator, tocase, initial, opts)
+    else
+        try case.allocTo(allocator, tocase, initial);
     defer allocator.free(actual);
     const expected = getExpected(_expected, fromcase, tocase);
     try testing.expectEqualStrings(expected, actual);
@@ -263,12 +269,13 @@ test "allocTo" {
 fn expectCaseCApi(
     comptime initial: []const u8,
     comptime _expected: []const u8,
-    comptime mfromcase: ?case.Case,
+    comptime fromcase: case.Case,
     comptime tocase: case.Case,
-    opts: case.Options,
+    comptime opts: case.Options,
 ) !void {
-    const actual = if (comptime tocase.isPrincipal())
-        @field(c, "case_" ++ @tagName(tocase))(
+    const actual = if (comptime tocase.hasOptions())
+        c.case_to_ext(
+            tocase,
             initial.ptr,
             initial.len,
             opts.fill.ptr,
@@ -276,14 +283,14 @@ fn expectCaseCApi(
             opts.apostrophes == .keep,
         )
     else
-        @field(c, "case_" ++ @tagName(tocase))(initial.ptr, initial.len);
-    defer std.heap.c_allocator.free(std.mem.span(actual));
+        c.case_to(tocase, initial.ptr, initial.len);
+    defer std.heap.c_allocator.free(std.mem.span(actual.?));
 
-    const expected = if (mfromcase) |fromcase|
+    const expected = if (fromcase != .unknown)
         getExpected(_expected, fromcase, tocase)
     else
         _expected;
-    try testing.expectEqualStrings(expected, std.mem.span(actual));
+    try testing.expectEqualStrings(expected, std.mem.span(actual.?));
 }
 
 test "c api" {
@@ -293,6 +300,7 @@ test "c api" {
             if (tocase == .unknown) continue;
             const from_text = @field(texts, @tagName(fromcase));
             const to_text = @field(expected_texts, @tagName(tocase));
+
             try expectCaseCApi(from_text, to_text, fromcase, tocase, .{});
         }
     }
