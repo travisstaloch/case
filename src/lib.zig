@@ -27,7 +27,7 @@ pub const Case = enum(u8) {
         });
         for (std.meta.tags(Case)) |tag| {
             const id = "CASE_" ++
-                (comptimeTo(.constant, @tagName(tag), .{}) catch unreachable);
+                (comptimeTo(.constant, @tagName(tag)) catch unreachable);
             const cid = @field(c, id);
             std.debug.assert(cid == @intFromEnum(tag));
         }
@@ -35,7 +35,7 @@ pub const Case = enum(u8) {
 
     /// principal case methods (upper, lower, capital) have an additional
     /// Options parameter.
-    pub fn isPrincipal(case: Case) bool {
+    pub fn hasOptions(case: Case) bool {
         return case == .upper or case == .lower or case == .capital;
     }
 };
@@ -442,18 +442,34 @@ pub fn pascal(reader: anytype, writer: anytype) Error!void {
 //     }
 // }
 
-/// converts to case from reader into writer
+/// converts to case from reader into writer. if case is upper, lower or capital
+/// use default Options.
 pub fn to(
+    comptime case: Case,
+    reader: anytype,
+    writer: anytype,
+) !void {
+    const caseFn = @field(@This(), @tagName(case));
+    if (comptime case.hasOptions())
+        try caseFn(reader, writer, .{})
+    else
+        try caseFn(reader, writer);
+}
+
+/// converts to case from reader into writer with Options
+pub fn toExt(
     comptime case: Case,
     reader: anytype,
     writer: anytype,
     opts: Options,
 ) !void {
-    const caseFn = @field(@This(), @tagName(case));
-    if (comptime case.isPrincipal())
-        try caseFn(reader, writer, opts)
+    if (!comptime case.hasOptions())
+        @compileError(std.fmt.comptimePrint(
+            "toExt() case '{s}' doesn't accept options.",
+            .{@tagName(case)},
+        ))
     else
-        try caseFn(reader, writer);
+        try @field(@This(), @tagName(case))(reader, writer, opts);
 }
 
 /// writes converted text to buf in specified case
@@ -461,11 +477,23 @@ pub fn bufTo(
     buf: []u8,
     comptime case: Case,
     text: []const u8,
-    opts: Options,
-) ![]const u8 {
+) ![]u8 {
     var rfbs = std.io.fixedBufferStream(text);
     var wfbs = std.io.fixedBufferStream(buf);
-    try to(case, rfbs.reader(), wfbs.writer(), opts);
+    try to(case, rfbs.reader(), wfbs.writer());
+    return wfbs.getWritten();
+}
+
+/// writes converted text to buf in specified case with Options
+pub fn bufToExt(
+    buf: []u8,
+    comptime case: Case,
+    text: []const u8,
+    opts: Options,
+) ![]u8 {
+    var rfbs = std.io.fixedBufferStream(text);
+    var wfbs = std.io.fixedBufferStream(buf);
+    try toExt(case, rfbs.reader(), wfbs.writer(), opts);
     return wfbs.getWritten();
 }
 
@@ -473,11 +501,21 @@ pub fn bufTo(
 pub fn length(
     comptime case: Case,
     text: []const u8,
+) !usize {
+    var cw = std.io.countingWriter(std.io.null_writer);
+    var fbs = std.io.fixedBufferStream(text);
+    try to(case, fbs.reader(), cw.writer());
+    return cw.bytes_written;
+}
+
+pub fn lengthExt(
+    comptime case: Case,
+    text: []const u8,
     opts: Options,
 ) !usize {
     var cw = std.io.countingWriter(std.io.null_writer);
     var fbs = std.io.fixedBufferStream(text);
-    try to(case, fbs.reader(), cw.writer(), opts);
+    try toExt(case, fbs.reader(), cw.writer(), opts);
     return cw.bytes_written;
 }
 
@@ -486,23 +524,45 @@ pub fn allocTo(
     allocator: std.mem.Allocator,
     comptime case: Case,
     text: []const u8,
-    opts: Options,
 ) ![]const u8 {
-    const buf = try allocator.alloc(u8, try length(case, text, opts));
-    return bufTo(buf, case, text, opts);
+    const buf = try allocator.alloc(u8, try length(case, text));
+    return bufTo(buf, case, text);
 }
 
-/// same as allocTo() but null terminated
-pub fn allocZTo(
+/// allocates a buffer and writes converted text to buffer in specified case
+/// with Options
+pub fn allocToExt(
     allocator: std.mem.Allocator,
     comptime case: Case,
     text: []const u8,
     opts: Options,
-) ![:0]const u8 {
-    const len = try length(case, text, opts);
+) ![]const u8 {
+    const buf = try allocator.alloc(u8, try lengthExt(case, text, opts));
+    return bufToExt(buf, case, text, opts);
+}
+
+/// same as allocTo() but returns a null terminated string
+pub fn allocToZ(
+    allocator: std.mem.Allocator,
+    comptime case: Case,
+    text: []const u8,
+) ![:0]u8 {
+    const len = try length(case, text);
     const buf = try allocator.allocSentinel(u8, len, 0);
-    _ = try bufTo(buf, case, text, opts);
-    std.debug.assert(buf[len] == 0);
+    _ = try bufTo(buf, case, text);
+    return buf;
+}
+
+/// same as allocToExt() but returns a null terminated string
+pub fn allocToZExt(
+    allocator: std.mem.Allocator,
+    comptime case: Case,
+    text: []const u8,
+    opts: Options,
+) ![:0]u8 {
+    const len = try lengthExt(case, text, opts);
+    const buf = try allocator.allocSentinel(u8, len, 0);
+    _ = try bufToExt(buf, case, text, opts);
     return buf;
 }
 
@@ -511,10 +571,9 @@ pub fn allocZTo(
 pub fn comptimeTo(
     comptime case: Case,
     comptime text: []const u8,
-    comptime opts: Options,
 ) ![]const u8 {
     comptime {
-        return comptimeToLen(case, text, opts,
+        return comptimeToLen(case, text,
         // http://www.macfreek.nl/memory/Letter_Distribution says that
         // the letter frequency of spaces is aound 18%
         //
@@ -524,17 +583,47 @@ pub fn comptimeTo(
     }
 }
 
+/// uses a comptime allocated buffer 20% bigger than text.len which should almost
+/// always be large enough. incase its not big enought, use comptimeToLen().
+pub fn comptimeToExt(
+    comptime case: Case,
+    comptime text: []const u8,
+    comptime opts: Options,
+) ![]const u8 {
+    comptime {
+        return comptimeToLenExt(case, text,
+        // http://www.macfreek.nl/memory/Letter_Distribution says that
+        // the letter frequency of spaces is aound 18%
+        //
+        // TODO better buffer length estimate w/out using too much comptime
+        // quota. calling length() here uses quite a bit.
+        text.len * 5 / 4, opts);
+    }
+}
+
 /// same as comptimeTo() but allows user to specify buffer len incase
 /// comptimeTo()'s buffer estimate is too small
 pub fn comptimeToLen(
     comptime case: Case,
     comptime text: []const u8,
-    comptime opts: Options,
     comptime len: usize,
 ) ![]const u8 {
     comptime {
         var buf: [len]u8 = undefined;
-        return bufTo(&buf, case, text, opts);
+        return bufTo(&buf, case, text);
+    }
+}
+
+/// same as comptimeToLen() but with Options
+pub fn comptimeToLenExt(
+    comptime case: Case,
+    comptime text: []const u8,
+    comptime len: usize,
+    comptime opts: Options,
+) ![]const u8 {
+    comptime {
+        var buf: [len]u8 = undefined;
+        return bufToExt(&buf, case, text, opts);
     }
 }
 
@@ -616,7 +705,7 @@ pub fn of(text: []const u8) Case {
     inline for (comptime std.meta.tags(Case)) |tag| {
         if (tag == .unknown) continue;
         const case_fn_name = "is" ++
-            comptime try comptimeTo(.pascal, @tagName(tag), .{});
+            comptime try comptimeTo(.pascal, @tagName(tag));
         const isCaseFn = @field(@This(), case_fn_name);
         if (isCaseFn(text)) return tag;
     }
