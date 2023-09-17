@@ -7,17 +7,18 @@ cases supported: camelCase, PascalCase, snake_case, CONSTANT_CASE, kebab-case, H
 
 uses readers and writers throughout. supports non-allocating and comptime use. 
 
-* `to(case, reader, writer, opts)` - converts to case from reader into writer
+* `to(case, reader, writer)` - converts to case from reader into writer
 * `of(text)` - return `Case` of text. may be 'unknown'.
-* `bufTo(buf, case, text, opts)` - writes converted text to buf in specified case
-* `allocTo(allocator, case, text, opts)` - allocates a buffer and writes converted text to buffer in specified case
-* `allocZTo()` - same as allocTo() but null terminated
-* `comptimeTo(case, text, opts)` - allocates buffer at comptime
-* `comptimeToLen(case, text, opts, len)` - same as comptimeTo() but allows user to specify buffer len
-* `length(case, text, opts)` - returns length needed to convert text to case
-* `upper(reader, writer, opts), camel(reader, writer)` - conversion functions for each case. upper(), lower() and capital() have an additional opts param.
+* `bufTo(buf, case, text)` - writes converted text to buf in specified case
+* `allocTo(allocator, case, text)` - allocates a buffer and writes converted text to buffer in specified case
+* `allocToZ()` - same as allocTo() but null terminated
+* `comptimeTo(case, text)` - allocates buffer at comptime
+* `comptimeToLen(case, text, len)` - same as comptimeTo() but allows user to specify buffer len
+* `length(case, text)` - returns length needed to convert text to case
 * `isCamel(text)` - true if text case is camel. similar methods for each case
-* `opts`
+* `upper(reader, writer, opts), camel(reader, writer)` - conversion functions for each case. upper(), lower() and capital() have an additional opts param.
+* `toExt(case, reader, writer, opts)` there are variants of all 'to' methods such as `toExt(), lengthExt()`. these are for upper, lower and capital cases when you want to specify Options.
+* `opts: Options`
   * fill - string used to replace non alpha numeric characters.  default empty.  when empty, don't replace non alpha numeric characters.
   * apostrophe - keep / remove.  default keep.
 
