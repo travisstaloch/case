@@ -17,13 +17,16 @@ pub export fn case_to(
     text_len: usize,
 ) ?[*:0]u8 {
     return switch (case_id) {
-        .upper,
+        inline .upper,
         .lower,
         .capital,
-        => |tag| std.debug.panic(
-            "case_to(): case '{s}' requires options.",
-            .{@tagName(tag)},
-        ),
+        => |tag| case.allocToZExt(
+            std.heap.c_allocator,
+            tag,
+            text[0..text_len],
+            .{},
+        ) catch
+            null,
         .unknown => null,
         inline else => |tag| allocToZ(
             std.heap.c_allocator,
@@ -76,13 +79,19 @@ pub export fn case_buf_to(
     buf_len: usize,
 ) ?[*:0]u8 {
     switch (case_id) {
-        .upper,
+        inline .upper,
         .lower,
         .capital,
-        => |tag| std.debug.panic(
-            "case_buf_to(): case '{s}' requires options.",
-            .{@tagName(tag)},
-        ),
+        => |tag| {
+            const result = case.bufToExt(
+                buf[0..buf_len],
+                tag,
+                text[0..text_len],
+                .{},
+            ) catch return null;
+            buf[result.len] = 0;
+            return @ptrCast(result.ptr);
+        },
         .unknown => return null,
         inline else => |tag| {
             const result = case.bufTo(
