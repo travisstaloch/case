@@ -20,7 +20,7 @@ fn expectCase(
     comptime tocase: case.Case,
     opts: case.Options,
 ) !void {
-    @setEvalBranchQuota(128_000);
+    @setEvalBranchQuota(256_000);
     var buf: [initial.len + 10]u8 = undefined;
     const actual = if (comptime tocase.hasOptions())
         try case.bufToExt(&buf, tocase, initial, opts)

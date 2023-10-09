@@ -24,7 +24,7 @@ uses readers and writers throughout. supports non-allocating and comptime use.
 
 ## c api
 
-* [c_api.zig](src/c_api.zig) - exports methods similar to all public zig methods above
+* [c_api.zig](src/c_api.zig) - exports methods similar to most public zig methods above
 * [case.h](src/case.h)
   * `Case` enum guaranteed to be in sync with `Case` enum in lib.zig
 

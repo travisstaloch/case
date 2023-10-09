@@ -584,7 +584,7 @@ pub fn comptimeTo(
 }
 
 /// uses a comptime allocated buffer 20% bigger than text.len which should almost
-/// always be large enough. incase its not big enought, use comptimeToLen().
+/// always be large enough. incase its not big enought, use comptimeToLenExt().
 pub fn comptimeToExt(
     comptime case: Case,
     comptime text: []const u8,
