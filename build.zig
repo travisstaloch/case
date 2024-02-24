@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const mod = b.addModule(
         "case",
-        .{ .source_file = .{ .path = "src/lib.zig" } },
+        .{ .root_source_file = .{ .path = "src/lib.zig" } },
     );
 
     const lib = b.addStaticLibrary(.{
@@ -14,9 +14,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    lib.addModule("case", mod);
+    lib.root_module.addImport("case", mod);
     lib.linkLibC();
-    lib.addIncludePath(.{ .path = "src" });
     b.installArtifact(lib);
     b.getInstallStep().dependOn(
         &b.addInstallHeaderFile("src/case.h", "case.h").step,
@@ -28,7 +27,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     tests.linkLibC();
-    tests.addModule("case", mod);
+    tests.root_module.addImport("case", mod);
     // needed to keep Case enums in sync between src/lib.zig and src/case.h
     tests.addIncludePath(.{ .path = "src" });
     const run_tests = b.addRunArtifact(tests);
@@ -38,10 +37,11 @@ pub fn build(b: *std.Build) void {
     // zig build test -> run src/test.c
     const c_api_test_exe = b.addExecutable(.{
         .name = "c_api_test",
-        .root_source_file = .{ .path = "src/test.c" },
+        .root_source_file = null,
         .target = target,
         .optimize = optimize,
     });
+    c_api_test_exe.addCSourceFile(.{ .file = .{ .path = "src/test.c" } });
     c_api_test_exe.linkLibC();
     c_api_test_exe.linkLibrary(lib);
     const run_c_api_test = b.addRunArtifact(c_api_test_exe);
