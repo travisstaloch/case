@@ -19,20 +19,6 @@ pub const Case = enum(u8) {
     capital,
     unknown,
 
-    // ensure all values correspond to the Case enum defined in src/case.h
-    comptime {
-        @setEvalBranchQuota(8000);
-        const c = @cImport({
-            @cInclude("case.h");
-        });
-        for (std.meta.tags(Case)) |tag| {
-            const id = "CASE_" ++
-                (comptimeTo(.constant, @tagName(tag)) catch unreachable);
-            const cid = @field(c, id);
-            std.debug.assert(cid == @intFromEnum(tag));
-        }
-    }
-
     /// principal case methods (upper, lower, capital) have an additional
     /// Options parameter.
     pub fn hasOptions(case: Case) bool {
@@ -567,19 +553,26 @@ pub fn allocToZExt(
 }
 
 /// uses a comptime allocated buffer 20% bigger than text.len which should almost
-/// always be large enough. incase its not big enought, use comptimeToLen().
+/// always be large enough. incase its not big enough, use comptimeToLen().
 pub fn comptimeTo(
     comptime case: Case,
     comptime text: []const u8,
 ) ![]const u8 {
     comptime {
-        return comptimeToLen(case, text,
-        // http://www.macfreek.nl/memory/Letter_Distribution says that
-        // the letter frequency of spaces is aound 18%
+        var fbs = std.io.fixedBufferStream(text);
+        var cw = std.io.countingWriter(std.io.null_writer);
+        try to(case, fbs.reader(), cw.writer());
+        const len = cw.bytes_written;
+        return comptimeToLen(case, text, len);
+        // This is the old limit
         //
-        // TODO better buffer length estimate w/out using too much comptime
-        // quota. calling length() here uses quite a bit.
-        text.len * 5 / 4);
+        // return comptimeToLen(case, text,
+        // // http://www.macfreek.nl/memory/Letter_Distribution says that
+        // // the letter frequency of spaces is aound 18%
+        // //
+        // // TODO better buffer length estimate w/out using too much comptime
+        // // quota. calling length() here uses quite a bit.
+        // text.len * 5 / 2);
     }
 }
 
@@ -700,12 +693,13 @@ pub fn isConstant(text: []const u8) bool {
 }
 
 /// return `Case` of text. may be 'unknown'.
-pub fn of(text: []const u8) Case {
-    @setEvalBranchQuota(2000);
+pub fn of(text: []const u8, comptime options: struct { eval_branch_quota: u32 = 1000 }) Case {
+    @setEvalBranchQuota(options.eval_branch_quota);
     inline for (comptime std.meta.tags(Case)) |tag| {
         if (tag == .unknown) continue;
-        const case_fn_name = "is" ++
-            comptime try comptimeTo(.pascal, @tagName(tag));
+        const tag_name = @tagName(tag);
+        const first_upper: []const u8 = &[_]u8{comptime std.ascii.toUpper(tag_name[0])};
+        const case_fn_name = comptime "is" ++ first_upper ++ tag_name[1..];
         const isCaseFn = @field(@This(), case_fn_name);
         if (isCaseFn(text)) return tag;
     }

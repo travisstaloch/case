@@ -178,5 +178,5 @@ pub export fn case_is_constant(text: [*]const u8, text_len: usize) bool {
 }
 
 pub export fn case_of(text: [*]const u8, text_len: usize) Case {
-    return case.of(text[0..text_len]);
+    return case.of(text[0..text_len], .{});
 }

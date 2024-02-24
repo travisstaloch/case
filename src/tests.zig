@@ -18,10 +18,10 @@ fn expectCase(
     comptime _expected: []const u8,
     comptime fromcase: case.Case,
     comptime tocase: case.Case,
-    opts: case.Options,
+    comptime opts: case.Options,
 ) !void {
-    @setEvalBranchQuota(256_000);
-    var buf: [initial.len + 10]u8 = undefined;
+    @setEvalBranchQuota(150_000);
+    var buf: [initial.len * 20]u8 = undefined;
     const actual = if (comptime tocase.hasOptions())
         try case.bufToExt(&buf, tocase, initial, opts)
     else
@@ -44,6 +44,23 @@ fn expectCase(
                 actual,
             },
         ));
+    }
+}
+
+// ensure all values correspond to the Case enum defined in src/case.h
+test "check enum values" {
+    const ch = @cImport({
+        @cInclude("./case.h");
+    });
+    inline for (comptime std.meta.tags(case.Case)) |tag| {
+        comptime {
+            const tag_name = @tagName(tag);
+            var const_tag: [tag_name.len]u8 = undefined;
+            for (0..const_tag.len) |i| const_tag[i] = std.ascii.toUpper(tag_name[i]);
+            const id = "CASE_" ++ const_tag;
+            const cid = @field(ch, id);
+            std.debug.assert(cid == @intFromEnum(tag));
+        }
     }
 }
 
@@ -143,7 +160,13 @@ test "conversions" {
             // std.debug.print("from {s: >10}:{s}\n", .{ @tagName(fromcase), from_text });
             // std.debug.print("to   {s: >10}:{s}\n", .{ @tagName(tocase), to_text });
             try expectCase(from_text, to_text, fromcase, tocase, .{});
-            comptime try expectCase(from_text, to_text, fromcase, tocase, .{});
+            comptime expectCase(from_text, to_text, fromcase, tocase, .{}) catch |e| {
+                const errmsg = std.fmt.comptimePrint(
+                    "err={s} from_text={s} fromcase={s} to_text={s} tocase={s}",
+                    .{ @errorName(e), from_text, @tagName(fromcase), to_text, @tagName(tocase) },
+                );
+                @compileError(errmsg);
+            };
         }
     }
 }
@@ -185,24 +208,26 @@ test "fuzz" {
 
 fn expectCaseId(comptime text: []const u8, comptime case_tag: case.Case) !void {
     const tag_name = @tagName(case_tag);
-    const case_fn_name = "is" ++
-        comptime try case.comptimeTo(.pascal, tag_name);
+    const first_upper: []const u8 = &[_]u8{comptime std.ascii.toUpper(tag_name[0])};
+    const case_fn_name = "is" ++ first_upper ++ tag_name[1..];
+    // comptime try case.comptimeTo(.pascal, tag_name);
     const isCaseFn = &@field(case, case_fn_name);
 
     testing.expect(isCaseFn(text)) catch |e| {
         std.log.err("expectCaseId() failure. !{s}('{s}')", .{ case_fn_name, text });
         return e;
     };
-    testing.expectEqual(case_tag, case.of(text)) catch |e| {
+    testing.expectEqual(case_tag, case.of(text, .{ .eval_branch_quota = 2000 })) catch |e| {
         std.log.err(
             "expectCaseId() failure. expected case.of('{s}') to be '{s}'. got '{s}'",
-            .{ text, tag_name, @tagName(case.of(text)) },
+            .{ text, tag_name, @tagName(case.of(text, .{})) },
         );
         return e;
     };
 }
 
 fn expectCaseIdCApi(comptime text: []const u8, comptime case_tag: case.Case) !void {
+    @setEvalBranchQuota(4000);
     const tag_name = @tagName(case_tag);
     const is_case_fn_name = "case_is_" ++ tag_name;
     const isCaseFn = &@field(c, is_case_fn_name);
@@ -214,7 +239,7 @@ fn expectCaseIdCApi(comptime text: []const u8, comptime case_tag: case.Case) !vo
     testing.expectEqual(case_tag, c.case_of(text.ptr, text.len)) catch |e| {
         std.log.err(
             "expectCaseId() failure. expected case.of('{s}') to be '{s}'. got '{s}'",
-            .{ text, tag_name, @tagName(case.of(text)) },
+            .{ text, tag_name, @tagName(case.of(text, .{})) },
         );
         return e;
     };
@@ -225,7 +250,7 @@ test "identify" {
         if (case_tag == .unknown) return;
         const text = @field(expected_texts, @tagName(case_tag));
         try expectCaseId(text, case_tag);
-        comptime try expectCaseId(text, case_tag);
+        try comptime expectCaseId(text, case_tag);
         try expectCaseIdCApi(text, case_tag);
     }
 }
