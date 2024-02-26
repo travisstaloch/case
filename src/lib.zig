@@ -552,8 +552,8 @@ pub fn allocToZExt(
     return buf;
 }
 
-/// uses a comptime allocated buffer 20% bigger than text.len which should almost
-/// always be large enough. incase its not big enough, use comptimeToLen().
+/// uses a counting writer to compute the required buffer len and then calls
+/// comptimeToLen()
 pub fn comptimeTo(
     comptime case: Case,
     comptime text: []const u8,
@@ -564,8 +564,11 @@ pub fn comptimeTo(
         try to(case, fbs.reader(), cw.writer());
         const len = cw.bytes_written;
         return comptimeToLen(case, text, len);
-        // This is the old limit
+
+        // uses a comptime allocated buffer 20% bigger than text.len which should almost
+        // always be large enough. incase its not big enough, use comptimeToLen().
         //
+        // // This is the old limit
         // return comptimeToLen(case, text,
         // // http://www.macfreek.nl/memory/Letter_Distribution says that
         // // the letter frequency of spaces is aound 18%
@@ -652,7 +655,7 @@ pub fn isCapital(text: []const u8) bool {
 
 fn isCamelImpl(text: []const u8) bool {
     return for (text[1..]) |c| {
-        if (!std.ascii.isAlphabetic(c)) break false;
+        if (!std.ascii.isAlphanumeric(c)) break false;
     } else true;
 }
 
