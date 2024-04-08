@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     lib.linkLibC();
     b.installArtifact(lib);
     b.getInstallStep().dependOn(
-        &b.addInstallHeaderFile("src/case.h", "case.h").step,
+        &b.addInstallHeaderFile(.{ .path = "src/case.h" }, "case.h").step,
     );
 
     const tests = b.addTest(.{
