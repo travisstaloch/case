@@ -180,7 +180,7 @@ test "edge cases" {
 
 test "fuzz" {
     const alphabet = "abcdefABCDEF-_ .,";
-    var prng = std.rand.DefaultPrng.init(0);
+    var prng = std.Random.DefaultPrng.init(0);
     const rand = prng.random();
     const len = 50;
     const buf = try std.testing.allocator.alloc(u8, len);
