@@ -33,7 +33,7 @@ const State = enum {
     other,
 
     comptime {
-        std.debug.assert(@typeInfo(State).Enum.tag_type == u2);
+        std.debug.assert(@typeInfo(State).@"enum".tag_type == u2);
     }
 
     pub fn int(a: State, b: State) u4 {
