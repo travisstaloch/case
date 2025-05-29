@@ -588,12 +588,12 @@ pub fn comptimeToExt(
 ) ![]const u8 {
     comptime {
         return comptimeToLenExt(case, text,
-        // http://www.macfreek.nl/memory/Letter_Distribution says that
-        // the letter frequency of spaces is aound 18%
-        //
-        // TODO better buffer length estimate w/out using too much comptime
-        // quota. calling length() here uses quite a bit.
-        text.len * 5 / 4, opts);
+            // http://www.macfreek.nl/memory/Letter_Distribution says that
+            // the letter frequency of spaces is aound 18%
+            //
+            // TODO better buffer length estimate w/out using too much comptime
+            // quota. calling length() here uses quite a bit.
+            text.len * 5 / 4, opts);
     }
 }
 
