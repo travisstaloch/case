@@ -8,11 +8,13 @@ pub fn build(b: *std.Build) void {
         .{ .root_source_file = b.path("src/lib.zig") },
     );
 
-    const lib = b.addStaticLibrary(.{
+    const lib = b.addLibrary(.{
         .name = "case",
-        .root_source_file = b.path("src/c_api.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/c_api.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     lib.root_module.addImport("case", mod);
     lib.linkLibC();
@@ -22,9 +24,11 @@ pub fn build(b: *std.Build) void {
     );
 
     const tests = b.addTest(.{
-        .root_source_file = b.path("src/tests.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     tests.linkLibC();
     tests.root_module.addImport("case", mod);
@@ -37,9 +41,11 @@ pub fn build(b: *std.Build) void {
     // zig build test -> run src/test.c
     const c_api_test_exe = b.addExecutable(.{
         .name = "c_api_test",
-        .root_source_file = null,
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = null,
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     c_api_test_exe.addCSourceFile(.{ .file = b.path("src/test.c") });
     c_api_test_exe.linkLibC();
