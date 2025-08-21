@@ -194,13 +194,13 @@ test "fuzz" {
         // std.debug.print("{s}\n", .{buf});
         inline for (case_tags) |tocase| {
             if (tocase == .unknown) continue;
-            var rfbs = std.io.fixedBufferStream(buf);
-            var wfbs = std.io.fixedBufferStream(buf2);
+            var rfbs = std.Io.Reader.fixed(buf);
+            var wfbs = std.Io.Writer.fixed(buf2);
             const caseFn = @field(case, @tagName(tocase));
             if (comptime tocase.hasOptions())
-                try caseFn(rfbs.reader(), wfbs.writer(), .{})
+                try caseFn(&rfbs, &wfbs, .{})
             else
-                try caseFn(rfbs.reader(), wfbs.writer());
+                try caseFn(&rfbs, &wfbs);
             // std.debug.print("to-{s} '{s}'\n", .{ @tagName(tocase), wfbs.getWritten() });
         }
     }
