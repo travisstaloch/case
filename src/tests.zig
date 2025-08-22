@@ -20,7 +20,7 @@ fn expectCase(
     comptime tocase: case.Case,
     comptime opts: case.Options,
 ) !void {
-    @setEvalBranchQuota(155_000);
+    @setEvalBranchQuota(initial.len * 5000);
     var buf: [initial.len * 20]u8 = undefined;
     const actual = if (comptime tocase.hasOptions())
         try case.bufToExt(&buf, tocase, initial, opts)
@@ -194,14 +194,14 @@ test "fuzz" {
         // std.debug.print("{s}\n", .{buf});
         inline for (case_tags) |tocase| {
             if (tocase == .unknown) continue;
-            var rfbs = std.io.fixedBufferStream(buf);
-            var wfbs = std.io.fixedBufferStream(buf2);
+            var rf: std.io.Reader = .fixed(buf);
+            var wf: std.Io.Writer = .fixed(buf2);
             const caseFn = @field(case, @tagName(tocase));
             if (comptime tocase.hasOptions())
-                try caseFn(rfbs.reader(), wfbs.writer(), .{})
+                try caseFn(&rf, &wf, .{})
             else
-                try caseFn(rfbs.reader(), wfbs.writer());
-            // std.debug.print("to-{s} '{s}'\n", .{ @tagName(tocase), wfbs.getWritten() });
+                try caseFn(&rf, &wf);
+            // std.debug.print("to-{s} '{s}'\n", .{ @tagName(tocase), wf.getWritten() });
         }
     }
 }
@@ -210,7 +210,6 @@ fn expectCaseId(comptime text: []const u8, comptime case_tag: case.Case) !void {
     const tag_name = @tagName(case_tag);
     const first_upper: []const u8 = &[_]u8{comptime std.ascii.toUpper(tag_name[0])};
     const case_fn_name = "is" ++ first_upper ++ tag_name[1..];
-    // comptime try case.comptimeTo(.pascal, tag_name);
     const isCaseFn = &@field(case, case_fn_name);
 
     testing.expect(isCaseFn(text)) catch |e| {
@@ -325,8 +324,27 @@ test "c api" {
             if (tocase == .unknown) continue;
             const from_text = @field(texts, @tagName(fromcase));
             const to_text = @field(expected_texts, @tagName(tocase));
-
             try expectCaseCApi(from_text, to_text, fromcase, tocase, .{});
+        }
+    }
+}
+
+test "comptimeTo" {
+    inline for (case_tags) |fromcase| {
+        if (fromcase == .unknown) continue;
+        inline for (case_tags) |tocase| {
+            if (tocase == .unknown) continue;
+
+            const from_text = @field(texts, @tagName(fromcase));
+            const to_text = @field(expected_texts, @tagName(tocase));
+            @setEvalBranchQuota(from_text.len * 5000);
+            const actual = try case.comptimeTo(tocase, from_text);
+            const expected = if (fromcase != .unknown)
+                comptime getExpected(to_text, fromcase, tocase)
+            else
+                to_text;
+
+            comptime try testing.expectEqualStrings(expected, actual);
         }
     }
 }

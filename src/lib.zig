@@ -1,8 +1,7 @@
 const std = @import("std");
+const Io = std.Io;
 
-pub const ReadError = std.io.FixedBufferStream([]const u8).Reader.Error;
-pub const WriteError = std.io.FixedBufferStream([]const u8).Writer.Error;
-pub const Error = ReadError || WriteError || error{ EndOfStream, OutOfMemory };
+pub const Error = Io.Reader.Error || Io.Writer.Error || error{ EndOfStream, OutOfMemory };
 
 /// the ordering of this enum is important because of() relies on more
 /// restrictive cases coming before less restrictive ones. i've noticed that
@@ -61,7 +60,7 @@ pub const Options = struct {
 
     pub const ApostropheMode = enum { remove, keep };
 
-    pub fn writeByte(opts: Options, c: u8, writer: anytype, mf: ?*const fn (u8) u8) !void {
+    pub fn writeByte(opts: Options, c: u8, writer: *Io.Writer, mf: ?*const fn (u8) u8) !void {
         if (opts.fill.len != 0 and !std.ascii.isAlphanumeric(c)) {
             _ = try writer.write(opts.fill);
         } else if (opts.apostrophes == .remove and c == '\'') {
@@ -73,25 +72,14 @@ pub const Options = struct {
 };
 
 fn upperLowerImpl(
-    reader: anytype,
-    writer: anytype,
+    reader: *Io.Reader,
+    writer: *Io.Writer,
     opts: Options,
     comptime toCaseFn: fn (u8) u8,
 ) Error!void {
-    var ring_buffer = std.fifo.LinearFifo(u8, .{ .Static = 2 }).init();
-    const rbw = ring_buffer.writer();
-    const rbr = ring_buffer.reader();
     var prevstate = State.whitespace;
     while (true) {
-        if (reader.readByte()) |c| {
-            try rbw.writeByte(c);
-            if (ring_buffer.count != ring_buffer.buf.len) continue;
-        } else |e| switch (e) {
-            error.EndOfStream => {},
-            else => return e,
-        }
-
-        const c = rbr.readByte() catch |e| switch (e) {
+        const c = reader.takeByte() catch |e| switch (e) {
             error.EndOfStream => break,
             else => return e,
         };
@@ -111,7 +99,7 @@ fn upperLowerImpl(
                 try opts.writeByte(cc, writer, toCaseFn);
             },
             // don't write a final trailing whitespace
-            else => if (state == .whitespace and ring_buffer.count == 0) {
+            else => if (state == .whitespace and reader.seek == reader.end) {
                 // skip
             } else try opts.writeByte(cc, writer, toCaseFn),
         }
@@ -123,40 +111,28 @@ fn upperLowerImpl(
 // accept an optional "fill" value that will replace any characters which are
 // not letters and numbers. All three also accept a third optional boolean
 // argument indicating if apostrophes are to be stripped out or left in.
-pub fn upper(reader: anytype, writer: anytype, opts: Options) Error!void {
+pub fn upper(reader: *Io.Reader, writer: *Io.Writer, opts: Options) Error!void {
     return upperLowerImpl(reader, writer, opts, std.ascii.toUpper);
 }
 
-pub fn lower(reader: anytype, writer: anytype, opts: Options) Error!void {
+pub fn lower(reader: *Io.Reader, writer: *Io.Writer, opts: Options) Error!void {
     return upperLowerImpl(reader, writer, opts, std.ascii.toLower);
 }
 
 const CapitalCase = enum { capital, header };
 
 fn capitalImpl(
-    reader: anytype,
-    writer: anytype,
+    reader: *Io.Reader,
+    writer: *Io.Writer,
     opts: Options,
     case: CapitalCase,
 ) Error!void {
-    var ring_buffer = std.fifo.LinearFifo(u8, .{ .Static = 2 }).init();
-    const rbw = ring_buffer.writer();
-    const rbr = ring_buffer.reader();
-
     var prevstate = State.whitespace;
     while (true) {
-        if (reader.readByte()) |c| {
-            try rbw.writeByte(c);
-            if (ring_buffer.count != ring_buffer.buf.len) continue;
-        } else |e| switch (e) {
-            error.EndOfStream => {},
-            else => return e,
-        }
-        const c = rbr.readByte() catch |e| switch (e) {
+        const c = reader.takeByte() catch |e| switch (e) {
             error.EndOfStream => break,
             else => return e,
         };
-
         const state = State.classify(c);
         switch (State.int(prevstate, state)) {
             State.int(.upper, .upper) => try writer.writeByte(std.ascii.toLower(c)),
@@ -183,14 +159,14 @@ fn capitalImpl(
                     try opts.writeByte(' ', writer, null)
                 else
                     try opts.writeByte(c, writer, null)
-            else if (ring_buffer.count != 0)
+            else if (reader.seek != reader.end)
                 try opts.writeByte('-', writer, null),
 
             State.int(.upper, .whitespace),
             State.int(.lower, .whitespace),
             => if (case == .capital)
                 try opts.writeByte(c, writer, null)
-            else if (ring_buffer.count != 0)
+            else if (reader.seek != reader.end)
                 try opts.writeByte('-', writer, null),
 
             State.int(.whitespace, .whitespace),
@@ -207,44 +183,33 @@ fn capitalImpl(
     }
 }
 
-pub fn capital(reader: anytype, writer: anytype, opts: Options) Error!void {
+pub fn capital(reader: *Io.Reader, writer: *Io.Writer, opts: Options) Error!void {
     return capitalImpl(reader, writer, opts, .capital);
 }
 
-pub fn header(reader: anytype, writer: anytype) Error!void {
+pub fn header(reader: *Io.Reader, writer: *Io.Writer) Error!void {
     return capitalImpl(reader, writer, .{ .fill = "-" }, .header);
 }
 
 fn constantImpl(
-    reader: anytype,
-    writer: anytype,
+    reader: *Io.Reader,
+    writer: *Io.Writer,
     opts: Options,
     comptime f: fn (u8) u8,
 ) Error!void {
-    var ring_buffer = std.fifo.LinearFifo(u8, .{ .Static = 2 }).init();
-    const rbw = ring_buffer.writer();
-    const rbr = ring_buffer.reader();
     var prevstate = State.whitespace;
     while (true) {
-        if (reader.readByte()) |c| {
-            try rbw.writeByte(c);
-            if (ring_buffer.count != ring_buffer.buf.len) continue;
-        } else |e| switch (e) {
-            error.EndOfStream => {},
-            else => return e,
-        }
-        const c = rbr.readByte() catch |e| switch (e) {
+        const c = reader.takeByte() catch |e| switch (e) {
             error.EndOfStream => break,
             else => return e,
         };
-
         const state = State.classify(c);
         switch (State.int(prevstate, state)) {
             State.int(.upper, .whitespace),
             State.int(.lower, .whitespace),
             State.int(.upper, .other),
             State.int(.lower, .other),
-            => if (ring_buffer.count != 0) try opts.writeByte(c, writer, null),
+            => if (reader.seek != reader.end) try opts.writeByte(c, writer, null),
 
             State.int(.whitespace, .whitespace),
             State.int(.whitespace, .other),
@@ -272,30 +237,28 @@ fn constantImpl(
     }
 }
 
-pub fn constant(reader: anytype, writer: anytype) Error!void {
+pub fn constant(reader: *Io.Reader, writer: *Io.Writer) Error!void {
     return constantImpl(reader, writer, .{ .fill = "_" }, std.ascii.toUpper);
 }
 
-pub fn snake(reader: anytype, writer: anytype) Error!void {
+pub fn snake(reader: *Io.Reader, writer: *Io.Writer) Error!void {
     return constantImpl(reader, writer, .{ .fill = "_" }, std.ascii.toLower);
 }
 
-pub fn kebab(reader: anytype, writer: anytype) Error!void {
+pub fn kebab(reader: *Io.Reader, writer: *Io.Writer) Error!void {
     return constantImpl(reader, writer, .{ .fill = "-" }, std.ascii.toLower);
 }
 
 const CamelCase = enum { camel, pascal };
 
-fn camelImpl(reader: anytype, writer: anytype, comptime case: CamelCase) Error!void {
+fn camelImpl(reader: *Io.Reader, writer: *Io.Writer, comptime case: CamelCase) Error!void {
     var prevstate = State.whitespace;
-    var bytes_read: usize = 0;
-    while (true) : (bytes_read += 1) {
-        const c = reader.readByte() catch |e| switch (e) {
+    while (true) {
+        const c = reader.takeByte() catch |e| switch (e) {
             error.EndOfStream => break,
             else => return e,
         };
         const state = State.classify(c);
-
         switch (State.int(prevstate, state)) {
             State.int(.upper, .whitespace),
             State.int(.lower, .whitespace),
@@ -311,7 +274,7 @@ fn camelImpl(reader: anytype, writer: anytype, comptime case: CamelCase) Error!v
 
             State.int(.other, .lower) => try writer.writeByte(std.ascii.toUpper(c)),
 
-            State.int(.whitespace, .upper) => if (bytes_read == 0)
+            State.int(.whitespace, .upper) => if (reader.seek == 1)
                 (if (case == .camel)
                     try writer.writeByte(std.ascii.toLower(c))
                 else if (case == .pascal)
@@ -321,7 +284,7 @@ fn camelImpl(reader: anytype, writer: anytype, comptime case: CamelCase) Error!v
             else
                 try writer.writeByte(c),
 
-            State.int(.whitespace, .lower) => if (bytes_read == 0)
+            State.int(.whitespace, .lower) => if (reader.seek == 1)
                 (if (case == .pascal)
                     try writer.writeByte(std.ascii.toUpper(c))
                 else
@@ -339,17 +302,17 @@ fn camelImpl(reader: anytype, writer: anytype, comptime case: CamelCase) Error!v
     }
 }
 
-pub fn camel(reader: anytype, writer: anytype) Error!void {
+pub fn camel(reader: *Io.Reader, writer: *Io.Writer) Error!void {
     return camelImpl(reader, writer, .camel);
 }
 
-pub fn pascal(reader: anytype, writer: anytype) Error!void {
+pub fn pascal(reader: *Io.Reader, writer: *Io.Writer) Error!void {
     return camelImpl(reader, writer, .pascal);
 }
 
 // TODO consider adding title case. this implementation works ok but isn't well
 // defined or implemented.
-// pub fn title(reader: anytype, writer: anytype) Error!void {
+// pub fn title(reader: *Io.Reader, writer: *Io.Writer) Error!void {
 //     // convert the following words (only at word boundaries) to lower case.
 //     // to do this, use a ring buffer with last N = 3 + 2 chars.  3 is the
 //     // length of the longest word.  and we need one char on either side to check
@@ -370,16 +333,16 @@ pub fn pascal(reader: anytype, writer: anytype) Error!void {
 //     var prevstate = State.whitespace;
 
 //     while (true) {
-//         if (reader.readByte()) |cx| {
+//         if (reader.takeByte()) |cx| {
 //             try rbw.writeByte(cx);
-//             if (ring_buffer.count != ring_buffer.buf.len) continue;
+//             if (ring_buffer.len() != ring_buffer.buf.len) continue;
 //         } else |e| switch (e) {
 //             error.EndOfStream => {},
 //             else => return e,
 //         }
 
 //         // ring buffer is full. check for words
-//         if (ring_buffer.count == ring_buffer.buf.len) blk: {
+//         if (ring_buffer.len() == ring_buffer.buf.len) blk: {
 //             // only match if at word boundary
 //             {
 //                 const byte = ring_buffer.peekItem(0);
@@ -406,24 +369,24 @@ pub fn pascal(reader: anytype, writer: anytype) Error!void {
 //                     continue;
 
 //                 // found word. write in lowercase
-//                 const byte = try rbr.readByte();
+//                 const byte = try rbr.takeByte();
 //                 const class = State.classify(byte);
 //                 try writer.writeByte(if (class == .other) ' ' else byte);
 //                 if (is_upper_at_boundary) try writer.writeByte(' ');
 //                 var i: u8 = 0;
-//                 while (i < ring_buffer.count) : (i += 1) {
-//                     try writer.writeByte(std.ascii.toLower(try rbr.readByte()));
+//                 while (i < ring_buffer.len()) : (i += 1) {
+//                     try writer.writeByte(std.ascii.toLower(try rbr.takeByte()));
 //                 }
 //                 break;
 //             }
 //         }
 
-//         const c = rbr.readByte() catch |e| switch (e) {
+//         const c = rbr.takeByte() catch |e| switch (e) {
 //             error.EndOfStream => break,
 //             else => return e,
 //         };
 //         const state = State.classify(c);
-//         try capitalImpl(c, prevstate, state, writer, .{}, ring_buffer.count == 0);
+//         try capitalImpl(c, prevstate, state, writer, .{}, ring_buffer.len() == 0);
 //         prevstate = state;
 //     }
 // }
@@ -432,8 +395,8 @@ pub fn pascal(reader: anytype, writer: anytype) Error!void {
 /// use default Options.
 pub fn to(
     comptime case: Case,
-    reader: anytype,
-    writer: anytype,
+    reader: *Io.Reader,
+    writer: *Io.Writer,
 ) !void {
     const caseFn = @field(@This(), @tagName(case));
     if (comptime case.hasOptions())
@@ -445,8 +408,8 @@ pub fn to(
 /// converts to case from reader into writer with Options
 pub fn toExt(
     comptime case: Case,
-    reader: anytype,
-    writer: anytype,
+    reader: *Io.Reader,
+    writer: *Io.Writer,
     opts: Options,
 ) !void {
     if (!comptime case.hasOptions())
@@ -459,15 +422,11 @@ pub fn toExt(
 }
 
 /// writes converted text to buf in specified case
-pub fn bufTo(
-    buf: []u8,
-    comptime case: Case,
-    text: []const u8,
-) ![]u8 {
-    var rfbs = std.io.fixedBufferStream(text);
-    var wfbs = std.io.fixedBufferStream(buf);
-    try to(case, rfbs.reader(), wfbs.writer());
-    return wfbs.getWritten();
+pub fn bufTo(buf: []u8, comptime case: Case, text: []const u8) ![]u8 {
+    var rf: Io.Reader = .fixed(text);
+    var wf: Io.Writer = .fixed(buf);
+    try to(case, &rf, &wf);
+    return wf.buffered();
 }
 
 /// writes converted text to buf in specified case with Options
@@ -477,32 +436,31 @@ pub fn bufToExt(
     text: []const u8,
     opts: Options,
 ) ![]u8 {
-    var rfbs = std.io.fixedBufferStream(text);
-    var wfbs = std.io.fixedBufferStream(buf);
-    try toExt(case, rfbs.reader(), wfbs.writer(), opts);
-    return wfbs.getWritten();
+    var rf: Io.Reader = .fixed(text);
+    var wf: Io.Writer = .fixed(buf);
+    try toExt(case, &rf, &wf, opts);
+    return wf.buffered();
 }
 
 /// returns length needed to convert text to case
-pub fn length(
-    comptime case: Case,
-    text: []const u8,
-) !usize {
-    var cw = std.io.countingWriter(std.io.null_writer);
-    var fbs = std.io.fixedBufferStream(text);
-    try to(case, fbs.reader(), cw.writer());
-    return cw.bytes_written;
+pub fn length(comptime case: Case, text: []const u8) !u64 {
+    var trash: [64]u8 = undefined;
+    var dw: Io.Writer.Discarding = .init(&trash);
+    var rf: Io.Reader = .fixed(text);
+    try to(case, &rf, &dw.writer);
+    return dw.count + dw.writer.end;
 }
 
 pub fn lengthExt(
     comptime case: Case,
     text: []const u8,
     opts: Options,
-) !usize {
-    var cw = std.io.countingWriter(std.io.null_writer);
-    var fbs = std.io.fixedBufferStream(text);
-    try toExt(case, fbs.reader(), cw.writer(), opts);
-    return cw.bytes_written;
+) !u64 {
+    var trash: [64]u8 = undefined;
+    var dw: Io.Writer.Discarding = .init(&trash);
+    var rf: Io.Reader = .fixed(text);
+    try toExt(case, &rf, &dw.writer, opts);
+    return dw.count + dw.writer.end;
 }
 
 /// allocates a buffer and writes converted text to buffer in specified case
@@ -535,7 +493,8 @@ pub fn allocToZ(
 ) ![:0]u8 {
     const len = try length(case, text);
     const buf = try allocator.allocSentinel(u8, len, 0);
-    _ = try bufTo(buf, case, text);
+    const ret = try bufTo(buf, case, text);
+    std.debug.assert(buf.len == ret.len);
     return buf;
 }
 
@@ -548,22 +507,19 @@ pub fn allocToZExt(
 ) ![:0]u8 {
     const len = try lengthExt(case, text, opts);
     const buf = try allocator.allocSentinel(u8, len, 0);
-    _ = try bufToExt(buf, case, text, opts);
+    const ret = try bufToExt(buf, case, text, opts);
+    std.debug.assert(buf.len == ret.len);
     return buf;
 }
 
-/// uses a counting writer to compute the required buffer len and then calls
-/// comptimeToLen()
-pub fn comptimeTo(
-    comptime case: Case,
-    comptime text: []const u8,
-) ![]const u8 {
+/// compute required buffer len and call comptimeToLen()
+pub inline fn comptimeTo(comptime case: Case, comptime text: []const u8) ![]const u8 {
     comptime {
-        var fbs = std.io.fixedBufferStream(text);
-        var cw = std.io.countingWriter(std.io.null_writer);
-        try to(case, fbs.reader(), cw.writer());
-        const len = cw.bytes_written;
-        return comptimeToLen(case, text, len);
+        var rf: Io.Reader = .fixed(text);
+        var trash: [64]u8 = undefined;
+        var dw: Io.Writer.Discarding = .init(&trash);
+        try to(case, &rf, &dw.writer);
+        return try comptimeToLen(case, text, dw.count + dw.writer.end);
 
         // uses a comptime allocated buffer 20% bigger than text.len which should almost
         // always be large enough. incase its not big enough, use comptimeToLen().
@@ -606,7 +562,9 @@ pub fn comptimeToLen(
 ) ![]const u8 {
     comptime {
         var buf: [len]u8 = undefined;
-        return bufTo(&buf, case, text);
+        const ret = try bufTo(&buf, case, text);
+        const fin = buf;
+        return fin[0..ret.len];
     }
 }
 
@@ -619,7 +577,10 @@ pub fn comptimeToLenExt(
 ) ![]const u8 {
     comptime {
         var buf: [len]u8 = undefined;
-        return bufToExt(&buf, case, text, opts);
+        const ret = try bufToExt(&buf, case, text, opts);
+        std.debug.assert(buf.len == ret.len);
+        const fin = buf;
+        return &fin;
     }
 }
 

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const mod = b.addModule(
@@ -22,6 +22,10 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(
         &b.addInstallHeaderFile(b.path("src/case.h"), "case.h").step,
     );
+    const filters = if (b.option([]const u8, "test-filter", "test filter")) |f|
+        try b.allocator.dupe([]const u8, &.{f})
+    else
+        &.{};
 
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -29,6 +33,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
         }),
+        .filters = filters,
     });
     tests.linkLibC();
     tests.root_module.addImport("case", mod);
