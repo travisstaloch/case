@@ -194,7 +194,7 @@ test "fuzz" {
         // std.debug.print("{s}\n", .{buf});
         inline for (case_tags) |tocase| {
             if (tocase == .unknown) continue;
-            var rf: std.io.Reader = .fixed(buf);
+            var rf: std.Io.Reader = .fixed(buf);
             var wf: std.Io.Writer = .fixed(buf2);
             const caseFn = @field(case, @tagName(tocase));
             if (comptime tocase.hasOptions())
